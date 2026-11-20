@@ -20,12 +20,14 @@ info(){ echo -e "${C_G}[INFO]${C_0} $*"; }
 warn(){ echo -e "${C_Y}[WARN]${C_0} $*"; }
 err(){ echo -e "${C_R}[ERR ]${C_0} $*"; }
 
-# ---- compose 命令封装 (优先 v2 插件, 回退 v1) ----
-if docker compose version >/dev/null 2>&1; then
-  dc(){ docker compose -p filecodebox -f "$COMPOSE_FILE" "$@"; }
-else
-  dc(){ docker-compose -p filecodebox -f "$COMPOSE_FILE" "$@"; }
-fi
+# ---- compose 命令封装 (运行时探测: 优先 v2 插件, 回退 v1) ----
+dc(){
+  if docker compose version >/dev/null 2>&1; then
+    docker compose -p filecodebox -f "$COMPOSE_FILE" "$@"
+  else
+    docker-compose -p filecodebox -f "$COMPOSE_FILE" "$@"
+  fi
+}
 
 get_port() {
   local p=""
@@ -35,9 +37,9 @@ get_port() {
 
 gen_compose() {
   local port; port=$(get_port)
+  # 项目名由 dc() 的 -p filecodebox 固定; 此处不写顶层 name:,
+  # 避免 docker-compose v1 回退路径按 v1 schema 校验报错
   {
-    echo "name: filecodebox"
-    echo ""
     echo "services:"
     echo "  filecodebox:"
     echo "    image: $IMAGE"
@@ -241,9 +243,15 @@ do_restore() {
   local ts; ts=$(date +%Y%m%d%H%M%S)
   dc stop
   [ -d "$DATA_DIR" ] && mv "$DATA_DIR" "${DATA_DIR}.bak-$ts"
-  tar -xzf "$sel" -C "$DATA_ROOT"
-  dc up -d
-  info "恢复完成, 当前数据已另存为 ${DATA_DIR}.bak-$ts"
+  if tar -xzf "$sel" -C "$DATA_ROOT"; then
+    dc up -d && info "恢复完成, 当前数据已另存为 ${DATA_DIR}.bak-$ts"
+  else
+    # 恢复失败必须回滚, 不能让容器以空数据目录启动
+    [ -d "${DATA_DIR}.bak-$ts" ] && mv "${DATA_DIR}.bak-$ts" "$DATA_DIR"
+    dc up -d
+    err "恢复失败(备份包损坏或路径不符), 已回滚原数据"
+    return 1
+  fi
 }
 
 # ---------- 11) 卸载 ----------
@@ -297,25 +305,31 @@ show_menu() {
 }
 
 case_main() {
-  case "$1" in
-    1) do_install ;;
-    2) do_status ;;
-    3) dc up -d && info "已启动" ;;
-    4) dc stop && info "已停止" ;;
-    5) dc restart && info "已重启" ;;
-    6) dc logs -f --tail 200 ;;
-    7) do_change_port ;;
-    8) do_passwd ;;
-    9) do_backup ;;
-    10) do_restore ;;
-    11) do_uninstall ;;
-    0) exit 0 ;;
-    *) ;;
+  case "${1:-}" in
+    1|install)  do_install ;;
+    2|status)   do_status ;;
+    3|start)    dc up -d && info "已启动" ;;
+    4|stop)     dc stop && info "已停止" ;;
+    5|restart)  dc restart && info "已重启" ;;
+    6|logs)     dc logs -f --tail 200 ;;
+    7)          do_change_port ;;
+    8)          do_passwd ;;
+    9)          do_backup ;;
+    10)         do_restore ;;
+    11)         do_uninstall ;;
+    0)          exit 0 ;;
+    *) err "未知命令: ${1:-} (可用: install|status|start|stop|restart|logs 或菜单编号 1-11)"; return 1 ;;
   esac
 }
 
 # ---- 以下顶层逻辑仅在直接执行时生效 (source 时跳过, 便于函数测试) ----
 if [[ "${BASH_SOURCE[0]}" == "${0:-}" ]]; then
+
+  # root 校验先于任何分发, 非交互子命令同样受保护
+  if [ "$(id -u)" -ne 0 ]; then
+    err "请用 root 运行 (sudo fcb)"
+    exit 1
+  fi
 
   # 支持非交互调用: fcb.sh start / fcb.sh status ...
   if [ -n "${1:-}" ] && [ "${1:-}" != "menu" ]; then
@@ -323,17 +337,12 @@ if [[ "${BASH_SOURCE[0]}" == "${0:-}" ]]; then
     exit $?
   fi
 
-  if [ "$(id -u)" -ne 0 ]; then
-    err "请用 root 运行 (sudo fcb)"
-    exit 1
-  fi
-
   while true; do
     show_menu
-    read -rp "请选择: " c
+    read -rp "请选择: " c || exit 0
     case_main "$c"
     [ "$c" = "0" ] && break
-    read -rp "回车返回菜单..." _
+    read -rp "回车返回菜单..." _ || exit 0
   done
 
 fi
