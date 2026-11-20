@@ -11,16 +11,21 @@
 
 ## 一键安装
 
+国际网络 / 有代理：
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aucrazy-p/fcb-deploy/main/install.sh | bash
 ```
 
-- 未安装 docker 时会提示先手动安装：`curl -fsSL https://get.docker.com | sh`
-- raw 直连不稳时可换源：
+国内 VPS（raw 直连不通时，走 jsDelivr CDN）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/aucrazy-p/fcb-deploy/main/install.sh | bash -s -- https://cdn.jsdelivr.net/gh/aucrazy-p/fcb-deploy@main/fcb.sh
+curl -fsSL https://cdn.jsdelivr.net/gh/aucrazy-p/fcb-deploy@main/install.sh | bash
 ```
+
+- 两个入口任选其一；install.sh 内部下载 `fcb.sh` 时自动多源回退（raw 超时 5 秒即切 jsDelivr），国内 VPS 用任一入口都能装完
+- 未安装 docker 时会提示先手动安装：`curl -fsSL https://get.docker.com | sh`
+- jsDelivr 有 CDN 缓存（最长约 12 小时），更新后如未生效可等缓存刷新或用 raw 入口
 
 安装完成后运行 `fcb` 进入管理菜单（等价 `bash /opt/filecodebox-deploy/fcb.sh`），选 `1) 安装 / 更新`。
 

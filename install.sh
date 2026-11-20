@@ -56,8 +56,8 @@ URLS=(
 ok=""
 for u in "${URLS[@]}"; do
   info "尝试下载: $u"
-  # [ -s ] 防空文件: CDN 异常返回 200 空体时不可落位
-  if curl -fsSL "$u" -o "$TMP" && [ -s "$TMP" ] && bash -n "$TMP" 2>/dev/null; then
+  # --connect-timeout 5: raw 在国内不通时快速失败切下一个源; [ -s ] 防空文件落位
+  if curl -fsSL --connect-timeout 5 --max-time 30 "$u" -o "$TMP" && [ -s "$TMP" ] && bash -n "$TMP" 2>/dev/null; then
     ok="$u"; break
   fi
 done
