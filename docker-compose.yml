@@ -1,0 +1,36 @@
+# FileCodeBox docker-compose 模板 (aucrazy-p/fcb-deploy)
+#
+# 注意: 实际部署文件由管理菜单 fcb.sh 动态生成到 /opt/filecodebox-deploy/docker-compose.yml,
+#       会按 .env 的 HOST_PORT 渲染端口, 并在检测到 1panel-network 时自动加入 networks 段。
+#       本文件仅作展示, 请勿直接手工维护服务器上的实际 compose。
+#
+# 上游项目: https://github.com/vastsa/FileCodeBox
+
+name: filecodebox
+
+services:
+  filecodebox:
+    image: lanol/filecodebox:latest
+    container_name: filecodebox
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:12345:12345"   # 仅绑定本机, 公网访问走 1panel 反代
+    volumes:
+      - /opt/filecodebox/data:/app/data
+    environment:
+      - APP_ENV=production
+      - WORKERS=1
+      - LOG_LEVEL=warning
+      - ACCESS_LOG=false
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # 以下两段由 fcb.sh 在检测到 1panel-network 时自动追加:
+    # networks:
+    #   - 1panel-network
+#
+# networks:
+#   1panel-network:
+#     external: true

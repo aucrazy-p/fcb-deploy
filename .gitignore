@@ -1,0 +1,5 @@
+out/
+memory/
+.workbuddy/
+*.log
+.DS_Store
