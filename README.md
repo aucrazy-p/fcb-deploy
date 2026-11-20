@@ -57,33 +57,43 @@ curl -fsSL https://cdn.jsdelivr.net/gh/aucrazy-p/fcb-deploy@main/install.sh | ba
 | `/opt/filecodebox-deploy/backups/` | 备份（保留最近 10 份） |
 | `/opt/filecodebox/data/` | 数据目录（挂载到容器 `/app/data`） |
 
-## 1panel 反代参考（手动配置）
+## 1panel 反代参考（手动配置，2026-11-20 实测）
 
-1. 确认容器已加入 `1panel-network`（fcb.sh 检测到该网络会自动加入）
-2. 1panel → 网站 → 创建网站 → **反向代理**，代理地址填 `http://filecodebox:12345`（容器名互访；若不同网络则填宿主机内网 IP:端口）
+1. 1panel → 网站 → 创建网站 → **反向代理**，代理地址填 **`http://127.0.0.1:12345`**（实测可用：1panel OpenResty 可直达宿主机回环，容器端口只绑 `127.0.0.1` 正好命中）
+2. 若 127.0.0.1 不通（OpenResty 容器网络不同时），备选容器名 `http://filecodebox:12345`——前提是容器已加入 `1panel-network`（fcb.sh 检测到该网络会自动加入）
 3. 网站 SSL 页签申请证书并开启强制 HTTPS
-4. 网站配置文件（conf）的 server 块加一行，防止大文件 413：
+4. `client_max_body_size` 加在**主配置 server 级**即可（对所有 location 生效，防大文件 413）：
 
 ```nginx
 client_max_body_size 100m;   # 与 upload_size 保持一致或更大
 ```
 
-5. 确认反代传递真实 IP（1panel 默认模板已带）：
+5. 1panel 反代的 `location /` 块不在主配置文件里，在 `include /www/sites/<域名>/proxy/*.conf` 引入的单独 conf 中——**不要**在主配置里再写一个 `location /`（nginx 会报 duplicate location）
+6. 确认反代传递真实 IP（1panel 默认模板已带）：
 
 ```nginx
 proxy_set_header X-Real-IP $remote_addr;
 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 ```
 
-## 上传容量与分片上传（管理面板设置）
+## 上传容量与分片上传（v3 实测界面）
 
-官方默认**单文件 10MB**，按需在管理面板调整：
+v3 起**初始化向导可直接设置**大部分参数，后续在管理面板调整：
 
-1. 访问站点 `/#/admin`，用管理员密码登录
-2. 进入「系统设置」：
-   - `upload_size`：单文件上限，单位**字节**（100MB = `104857600`）
-   - `enable_chunk`：分片上传，设为 `1` 开启（大文件建议开启）
-3. 反代侧 `client_max_body_size` 同步放宽（见上节）
+**初始化向导（首次访问站点时）：**
+- 单文件大小限制：直接选数值和单位（如 100 MB）
+- 启用分片上传：勾选即开
+- 上传频率：默认 10 次/分钟——**开了分片建议调大到 60+**，否则一个 100MB 文件切几十片会被限流卡速
+
+**后续调整（`/#/admin` 管理面板 → 系统设置）：**
+
+| 配置项 | 单位/说明 |
+|---|---|
+| `upload_size` | 字节（100MB = `104857600`） |
+| `enable_chunk` | `1` 开分片 |
+| `storage_limit` | 字节，**总磁盘配额**（1GB = `1073741824`），`0` 不限；超限上传返回 HTTP 507，上传前原子预留，并发不超卖 |
+
+**反代侧**：`client_max_body_size` 同步放宽（见上节）；分片开启后单片小，413 风险基本消失。
 
 注意：这些配置存在数据库中，请在面板修改，不要直写数据库。
 
